@@ -8,6 +8,7 @@
 #include "neon_string.h"
 #include "neon_class_metadata.h"
 #include "neon_task.h"
+#include "neon_threadsafe_cb.h"
 
 extern "C" void Neon_Call_SetReturn(v8::FunctionCallbackInfo<v8::Value> *info, v8::Local<v8::Value> value) {
   info->GetReturnValue().Set(value);
@@ -512,4 +513,19 @@ extern "C" void Neon_Task_Schedule(void *task, Neon_TaskPerformCallback perform,
   v8::Isolate *isolate = v8::Isolate::GetCurrent();
   neon::Task *internal_task = new neon::Task(isolate, task, perform, complete, callback);
   neon::queue_task(internal_task);
+}
+
+extern "C" void* Neon_ThreadSafeCb_New(v8::Local<v8::Value> self, v8::Local<v8::Function> callback) {
+  v8::Isolate *isolate = v8::Isolate::GetCurrent();
+  return new neon::ThreadSafeCb(isolate, self, callback);
+}
+
+extern "C" void Neon_ThreadSafeCb_Call(void *thread_safe_cb, void *arg_cb_raw, void *completion_cb_raw, Neon_ThreadSafeCbCallback complete) {
+    neon::ThreadSafeCb *cb = static_cast<neon::ThreadSafeCb*>(thread_safe_cb);
+    cb->call(arg_cb_raw, completion_cb_raw, complete);
+}
+
+extern "C" void Neon_ThreadSafeCb_Delete(void * thread_safe_cb) {
+    neon::ThreadSafeCb *cb = static_cast<neon::ThreadSafeCb*>(thread_safe_cb);
+    cb->close();
 }
