@@ -134,11 +134,11 @@ extern "C" {
 
   void Neon_Task_Schedule(void *task, Neon_TaskPerformCallback perform, Neon_TaskCompleteCallback complete, v8::Local<v8::Function> callback);
 
-  typedef void (*Neon_ThreadSafeCbCallback)(v8::Local<v8::Value> self, v8::Local<v8::Value> callback, void *arg_cb);
+  typedef void (*Neon_ThreadSafeCallbackHandler)(v8::Local<v8::Value> self, v8::Local<v8::Value> callback, void* arg_cb);
 
   void* Neon_ThreadSafeCb_New(v8::Local<v8::Value> self, v8::Local<v8::Function> callback);
-  void Neon_ThreadSafeCb_Call(void *thread_safe_cb, void *arg_cb_raw, Neon_ThreadSafeCbCallback complete);
-  void Neon_ThreadSafeCb_Delete(void *thread_safe_cb);
+  void Neon_ThreadSafeCb_Call(void* thread_safe_cb, void* rust_callback, Neon_ThreadSafeCallbackHandler handler);
+  void Neon_ThreadSafeCb_Delete(void* thread_safe_cb);
 }
 
 #endif

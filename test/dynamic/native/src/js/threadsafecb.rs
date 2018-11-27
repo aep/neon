@@ -1,30 +1,5 @@
 use neon::prelude::*;
 
-/*
-test with emit:
-JS:
-const e = new Emitter()
-extend with event emitter
-e.connect()
-e.on('progress', (p) => {
-    console.log('progress:', `{p}%`)
-})
-e.on('end', (result) => {
-    assert(result === 100)
-    console.log('finished:', `{result}%`)
-    done()
-})
-e.start() // do work async
-
-RS:
-
-Emitter(Option<ThreadSafeCb)
-
-init => Emitter(None)
-connect => self.cb = ThreadSafeCb::new(this, 'emit')
-start => rayon progress cb.call('progress', p), end cb.call('end', 100)
-
-*/
 use std::thread;
 use std::time::Duration;
 
@@ -62,16 +37,19 @@ declare_types! {
         if let Some(cb) = cb {
             thread::spawn(move || {
                 for i in 1..10 {
-                    /*cb.call(|cx, this, callback| {
+                    cb.call(|cx, this, callback| {
                         let args : Vec<Handle<JsValue>> = vec![cx.string("progress").upcast(), cx.number(i).upcast()];
                         let result = callback.call(cx, this, args);
-                    });*/
-                    println!("{}", i);
+                        match(result) {
+                          Ok(v) => println!("{}", v.to_string(cx).unwrap().value()),
+                          Err(e) => println!("{}", e),
+                        }
+                    });
                     thread::sleep(Duration::from_millis(40));
                 }
                 cb.call(|cx, this, callback| {
-                    let args : Vec<Handle<JsValue>> = vec![cx.string("end").upcast(), cx.number(12).upcast()];
-                    let result = callback.call(cx, this, args);
+                    let args : Vec<Handle<JsValue>> = vec![cx.string("end").upcast(), cx.number(100).upcast()];
+                    let _result = callback.call(cx, this, args);
                 });
             });
         }

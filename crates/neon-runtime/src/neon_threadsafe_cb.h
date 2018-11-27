@@ -1,85 +1,80 @@
-#ifndef NEON_THREADSAFE_CB_H_
-#define NEON_THREADSAFE_CB_H_
+#ifndef NEON_THREADSAFE_CALLBACK_H_
+#define NEON_THREADSAFE_CALLBACK_H_
 
 #include <uv.h>
 #include "neon.h"
 #include "v8.h"
+#include <mutex>
 
 namespace neon {
 
-    class ThreadSafeCb {
+    class ThreadSafeCallback {
     public:
-        ThreadSafeCb(v8::Isolate *isolate,
-            v8::Local<v8::Value> self,
-            v8::Local<v8::Function> callback)
-            : isolate_(isolate)
+        ThreadSafeCallback(v8::Isolate *isolate, v8::Local<v8::Value> self, v8::Local<v8::Function> callback): isolate_(isolate), close_(false)
         {
             async_.data = this;
             uv_async_init(uv_default_loop(), &async_, async_callback);
-            // Save the callback to be invoked when the task completes.
+            // Save the this argument and the callback to be invoked.
             self_.Reset(isolate, self);
-            // Save the callback to be invoked when the task completes.
             callback_.Reset(isolate, callback);
             // Save the context (aka realm) to be used when invoking the callback.
             context_.Reset(isolate, isolate->GetCurrentContext());
         }
 
-        void call(void *arg_cb_raw, Neon_ThreadSafeCbCallback complete) {
-            // TODO: lock mutex
-            // std::lock_guard<std::mutex> lock(mutex_);
-            function_pairs_.push_back({ arg_cb_raw, complete });
+        void call(void *rust_callback, Neon_ThreadSafeCallbackHandler handler) {
+            printf("before call\n");
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                printf("after call %d\n", close_);
+                if (close_) {
+                    return;
+                }
+                function_pairs_.push_back({ rust_callback, handler });
+            }
+            uv_async_send(&async_);
+        }
+
+        void close() {
+            printf("before close\n");
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                printf("after close %d\n", close_);
+                if (close_) {
+                    return;
+                }
+                close_ = true;
+            }
             uv_async_send(&async_);
         }
 
         void async_call() {
-
-            // TODO: lock mutex
-            // std::lock_guard<std::mutex> lock(mutex_);
+            printf("before async_call\n");
+            std::lock_guard<std::mutex> lock(mutex_);
+            printf("after async_call %d\n", close_);
             if (close_) {
-                uv_close(reinterpret_cast<uv_handle_t *>(&async_), [](uv_handle_t *handle) {
-                    delete static_cast<ThreadSafeCb *>(handle->data);
+                uv_close(reinterpret_cast<uv_handle_t*>(&async_), [](uv_handle_t* handle) {
+                    delete static_cast<ThreadSafeCallback*>(handle->data);
                 });
                 return;
             }
-            printf("closed? %d\n", close_);
+            // Ensure that we have all the proper scopes installed on the C++ stack before
+            // invoking the callback, and use the context (i.e. realm) we saved with the task.
+            v8::Isolate::Scope isolate_scope(isolate_);
+            v8::HandleScope handle_scope(isolate_);
+            v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate_, context_);
+            v8::Context::Scope context_scope(context);
+
+            v8::Local<v8::Value> self = v8::Local<v8::Value>::New(isolate_, self_);
+            v8::Local<v8::Function> callback = v8::Local<v8::Function>::New(isolate_, callback_);
+            for (const CbData &data : function_pairs_)
             {
-                // Ensure that we have all the proper scopes installed on the C++ stack before
-                // invoking the callback, and use the context (i.e. realm) we saved with the task.
-                v8::Isolate::Scope isolate_scope(isolate_);
-                v8::HandleScope handle_scope(isolate_);
-                v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate_, context_);
-                v8::Context::Scope context_scope(context);
-                while (true)
-                {
-                    std::vector<CbData> func_pairs;
-                    {
-                        // TODO: lock mutex
-                        // std::lock_guard<std::mutex> lock(mutex_);
-                        if (function_pairs_.empty())
-                            break;
-                        else
-                            func_pairs.swap(function_pairs_);
-                    }
-                    v8::Local<v8::Value> self = v8::Local<v8::Value>::New(isolate_, self_);
-                    v8::Local<v8::Function> callback = v8::Local<v8::Function>::New(isolate_, callback_);
-                    for (const CbData &data : func_pairs)
-                    {
-                        data.complete(self, callback, data.arg_cb);
-                    }
-                }
+                data.handler(self, callback, data.rust_callback);
             }
         }
 
-        void close() {
-            // TODO: lock mutex
-            // std::lock_guard<std::mutex> lock(mutex_);
-            close_ = true;
-            uv_async_send(&async_);
-        }
-
     private:
-        static void async_callback(uv_async_t *handle) {
-            ThreadSafeCb *cb = static_cast<ThreadSafeCb*>(handle->data);
+        static void async_callback(uv_async_t* handle) {
+            ThreadSafeCallback* cb = static_cast<ThreadSafeCallback*>(handle->data);
             cb->async_call();
         }
 
@@ -90,11 +85,12 @@ namespace neon {
         v8::Persistent<v8::Context> context_;
 
         struct CbData {
-            void *arg_cb;
-            Neon_ThreadSafeCbCallback complete;
+            void *rust_callback;
+            Neon_ThreadSafeCallbackHandler handler;
         };
-        std::vector<CbData> function_pairs_;
 
+        std::mutex mutex_;
+        std::vector<CbData> function_pairs_;
         bool close_;
     };
 }

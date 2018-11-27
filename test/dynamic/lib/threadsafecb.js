@@ -10,6 +10,7 @@ describe('ThreadSafeCb', function() {
 
     e.on('progress', (p) => {
         console.log('progress:', `${p}%`)
+        // throw p
     })
     e.on('end', (result) => {
         console.log('finished:', `${result}%`)

@@ -517,15 +517,15 @@ extern "C" void Neon_Task_Schedule(void *task, Neon_TaskPerformCallback perform,
 
 extern "C" void* Neon_ThreadSafeCb_New(v8::Local<v8::Value> self, v8::Local<v8::Function> callback) {
   v8::Isolate *isolate = v8::Isolate::GetCurrent();
-  return new neon::ThreadSafeCb(isolate, self, callback);
+  return new neon::ThreadSafeCallback(isolate, self, callback);
 }
 
-extern "C" void Neon_ThreadSafeCb_Call(void *thread_safe_cb, void *arg_cb_raw, Neon_ThreadSafeCbCallback complete) {
-    neon::ThreadSafeCb *cb = static_cast<neon::ThreadSafeCb*>(thread_safe_cb);
-    cb->call(arg_cb_raw, complete);
+extern "C" void Neon_ThreadSafeCb_Call(void *thread_safe_cb, void *rust_callback, Neon_ThreadSafeCallbackHandler handler) {
+    neon::ThreadSafeCallback *cb = static_cast<neon::ThreadSafeCallback*>(thread_safe_cb);
+    cb->call(rust_callback, handler);
 }
 
 extern "C" void Neon_ThreadSafeCb_Delete(void * thread_safe_cb) {
-    neon::ThreadSafeCb *cb = static_cast<neon::ThreadSafeCb*>(thread_safe_cb);
+    neon::ThreadSafeCallback *cb = static_cast<neon::ThreadSafeCallback*>(thread_safe_cb);
     cb->close();
 }

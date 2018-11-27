@@ -27,8 +27,6 @@ impl Drop for ThreadSafeCBInner {
 #[derive(Clone)]
 pub struct ThreadSafeCB(Arc<ThreadSafeCBInner>);
 
-type ArgCb = fn(&mut TaskContext, Handle<JsValue>, Handle<JsFunction>);
-
 impl ThreadSafeCB {
     pub fn new<T: Value>(this: Handle<T>, callback: Handle<JsFunction>) -> Self {
         let cb = unsafe {
@@ -37,19 +35,19 @@ impl ThreadSafeCB {
         ThreadSafeCB(Arc::new(ThreadSafeCBInner(cb)))
     }
 
-    pub fn call(&self, arg_cb: ArgCb) {
-        let arg_cb_raw = Box::into_raw(Box::new(arg_cb)) as *mut c_void;
+    pub fn call<F: Fn(&mut TaskContext, Handle<JsValue>, Handle<JsFunction>)>(&self, arg_cb: F) {
+        let callback = Box::into_raw(Box::new(arg_cb)) as *mut c_void;
         unsafe {
-            neon_runtime::threadsafecb::call((*self.0).0, arg_cb_raw, perform_arg_cb);
+            neon_runtime::threadsafecb::call((*self.0).0, callback, handle_callback::<F>);
         }
     }
 }
 
-unsafe extern "C" fn perform_arg_cb(this: raw::Local, callback: raw::Local, arg_cb: *mut c_void) {
+unsafe extern "C" fn handle_callback<F: Fn(&mut TaskContext, Handle<JsValue>, Handle<JsFunction>)>(this: raw::Local, func: raw::Local, callback: *mut c_void) {
     TaskContext::with(|mut cx: TaskContext| {
         let this = JsValue::new_internal(this);
-        let callback: Handle<JsFunction> = Handle::new_internal(JsFunction::from_raw(callback));
-        let cb: Box<ArgCb> = Box::from_raw(mem::transmute(arg_cb));
-        cb(&mut cx, this, callback);
+        let func: Handle<JsFunction> = Handle::new_internal(JsFunction::from_raw(func));
+        let callback: Box<F> = Box::from_raw(mem::transmute(callback));
+        callback(&mut cx, this, func);
     })
 }
