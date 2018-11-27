@@ -60,23 +60,20 @@ declare_types! {
             callback.cb.clone()
         };
         if let Some(cb) = cb {
-            thread::spawn(|| {
+            thread::spawn(move || {
                 for i in 1..10 {
-                    cb.call(|cx| {
-                        return vec![cx.string("progress").upcast(), cx.number(i).upcast()];
-                    }, |_| {
-                    });
-                    thread::sleep(Duration::from_millis(500));
+                    /*cb.call(|cx, this, callback| {
+                        let args : Vec<Handle<JsValue>> = vec![cx.string("progress").upcast(), cx.number(i).upcast()];
+                        let result = callback.call(cx, this, args);
+                    });*/
+                    println!("{}", i);
+                    thread::sleep(Duration::from_millis(40));
                 }
-                cb.call(|cx| {
-                    return vec![cx.string("end").upcast(), cx.number(12).upcast()];
-                }, |_| {
+                cb.call(|cx, this, callback| {
+                    let args : Vec<Handle<JsValue>> = vec![cx.string("end").upcast(), cx.number(12).upcast()];
+                    let result = callback.call(cx, this, args);
                 });
             });
-            /*cb.call(|cx| {
-                return vec![cx.string("end").upcast(), cx.number(12).upcast()];
-            }, |_| {
-            });*/
         }
         Ok(cx.undefined().upcast())
     }

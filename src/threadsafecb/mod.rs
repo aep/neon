@@ -4,7 +4,6 @@ use std::mem;
 use std::os::raw::c_void;
 
 use types::*;
-use result::JsResult;
 use handle::{Handle, Managed};
 use context::*;
 use neon_runtime;
@@ -13,6 +12,9 @@ use std::sync::Arc;
 
 
 struct ThreadSafeCBInner(*mut c_void);
+
+unsafe impl Send for ThreadSafeCBInner {}
+unsafe impl Sync for ThreadSafeCBInner {}
 
 impl Drop for ThreadSafeCBInner {
     fn drop(&mut self) {
@@ -25,8 +27,7 @@ impl Drop for ThreadSafeCBInner {
 #[derive(Clone)]
 pub struct ThreadSafeCB(Arc<ThreadSafeCBInner>);
 
-type ArgCb = for<'a> fn(&mut TaskContext<'a>) -> Vec<Handle<'a, JsValue>>;
-type CompletionCb = fn(result: JsResult<JsValue>);
+type ArgCb = fn(&mut TaskContext, Handle<JsValue>, Handle<JsFunction>);
 
 impl ThreadSafeCB {
     pub fn new<T: Value>(this: Handle<T>, callback: Handle<JsFunction>) -> Self {
@@ -36,25 +37,19 @@ impl ThreadSafeCB {
         ThreadSafeCB(Arc::new(ThreadSafeCBInner(cb)))
     }
 
-    pub fn call(&self, arg_cb: ArgCb, completion_cb: CompletionCb) {
-        let arg_cb_raw = Box::into_raw(Box::new(arg_cb));
-        let completion_cb_raw = Box::into_raw(Box::new(completion_cb));
+    pub fn call(&self, arg_cb: ArgCb) {
+        let arg_cb_raw = Box::into_raw(Box::new(arg_cb)) as *mut c_void;
         unsafe {
-            neon_runtime::threadsafecb::call((*self.0).0, arg_cb_raw as *mut c_void,
-                                         completion_cb_raw as *mut c_void,
-                                         perform_arg_cb);
+            neon_runtime::threadsafecb::call((*self.0).0, arg_cb_raw, perform_arg_cb);
         }
     }
 }
 
-unsafe extern "C" fn perform_arg_cb(this: raw::Local, callback: raw::Local, arg_cb: *mut c_void, completion_cb: *mut c_void) {
+unsafe extern "C" fn perform_arg_cb(this: raw::Local, callback: raw::Local, arg_cb: *mut c_void) {
     TaskContext::with(|mut cx: TaskContext| {
-        let cb: Box<ArgCb> = Box::from_raw(mem::transmute(arg_cb));
-        let args = cb(&mut cx);
         let this = JsValue::new_internal(this);
-        let callback: JsFunction = JsFunction::from_raw(callback);
-        let result = callback.call(&mut cx, this, args);
-        let cb: Box<CompletionCb> = Box::from_raw(mem::transmute(completion_cb));
-        cb(result);
+        let callback: Handle<JsFunction> = Handle::new_internal(JsFunction::from_raw(callback));
+        let cb: Box<ArgCb> = Box::from_raw(mem::transmute(arg_cb));
+        cb(&mut cx, this, callback);
     })
 }

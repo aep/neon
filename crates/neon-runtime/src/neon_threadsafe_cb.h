@@ -24,10 +24,10 @@ namespace neon {
             context_.Reset(isolate, isolate->GetCurrentContext());
         }
 
-        void call(void *arg_cb_raw, void *completion_cb_raw, Neon_ThreadSafeCbCallback complete) {
+        void call(void *arg_cb_raw, Neon_ThreadSafeCbCallback complete) {
             // TODO: lock mutex
             // std::lock_guard<std::mutex> lock(mutex_);
-            function_pairs_.push_back({ arg_cb_raw, completion_cb_raw, complete });
+            function_pairs_.push_back({ arg_cb_raw, complete });
             uv_async_send(&async_);
         }
 
@@ -64,7 +64,7 @@ namespace neon {
                     v8::Local<v8::Function> callback = v8::Local<v8::Function>::New(isolate_, callback_);
                     for (const CbData &data : func_pairs)
                     {
-                        data.complete(self, callback, data.arg_cb, data.completion_cb);
+                        data.complete(self, callback, data.arg_cb);
                     }
                 }
             }
@@ -91,7 +91,6 @@ namespace neon {
 
         struct CbData {
             void *arg_cb;
-            void *completion_cb;
             Neon_ThreadSafeCbCallback complete;
         };
         std::vector<CbData> function_pairs_;
